@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, sync::atomic::AtomicU64};
 
 use clap::Parser;
 use conversations::TokenizedInput;
@@ -11,6 +11,9 @@ pub mod template;
 pub mod conversations;
 pub mod binpacking;
 pub mod config;
+
+static TOTAL_JSONL: AtomicU64 = AtomicU64::new(0);
+static CURRENT_JSONL: AtomicU64 = AtomicU64::new(0);
 
 fn single_jsonl_process(jsonl_path: &str, out_folder: &str,template: template::ChatTemplate) -> std::io::Result<()> {
     let msg_pack_path = {
@@ -25,7 +28,6 @@ fn single_jsonl_process(jsonl_path: &str, out_folder: &str,template: template::C
     };
     // read jsonl for testing
     let data = conversations::read_jsonl(jsonl_path, template);
-    dbg!(&data.len());
     // parallelize the tokenization
     let mut inputs: Vec<TokenizedInput> = data
         .par_iter()
@@ -46,7 +48,6 @@ fn single_jsonl_process(jsonl_path: &str, out_folder: &str,template: template::C
         .collect();
     
     inputs.sort_by(|a, b| b.length.cmp(&a.length));
-    println!("Last length: {}", inputs.last().unwrap().length);
 
     // bin packing
     let max_length = 8192;
@@ -55,6 +56,12 @@ fn single_jsonl_process(jsonl_path: &str, out_folder: &str,template: template::C
     // serialize the bins
     let encoded = rmp_serde::to_vec(&bins).unwrap();
     fs::write(msg_pack_path, encoded)?;
+    CURRENT_JSONL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    println!(
+        "Processed {} out of {}",
+        CURRENT_JSONL.load(std::sync::atomic::Ordering::SeqCst),
+        TOTAL_JSONL.load(std::sync::atomic::Ordering::SeqCst)
+    );
 
     Ok(())
 
@@ -91,6 +98,10 @@ fn main() -> std::io::Result<()> {
             } else {
                 None
             }
+        })
+        .map(|path| {
+            TOTAL_JSONL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            path
         })
         .collect::<Vec<_>>()
         .par_iter()
