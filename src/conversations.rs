@@ -5,7 +5,9 @@ use crate::template;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct __Conversation {
+    #[serde(alias = "conversations")]
     conversation: Vec<template::TextMessage>,
+    
 }
 
 #[derive(Debug, Serialize, Deserialize)]
