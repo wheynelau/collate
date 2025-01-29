@@ -1,7 +1,6 @@
-use std::{fs, sync::atomic::AtomicU64};
+use std::fs;
 
 use clap::Parser;
-use conversations::TokenizedInput;
 use rayon::prelude::*;
 use std::path::Path;
 
@@ -12,60 +11,6 @@ pub mod conversations;
 pub mod binpacking;
 pub mod config;
 
-static TOTAL_JSONL: AtomicU64 = AtomicU64::new(0);
-static CURRENT_JSONL: AtomicU64 = AtomicU64::new(0);
-
-fn single_jsonl_process(jsonl_path: &str, out_folder: &str,template: template::ChatTemplate) -> std::io::Result<()> {
-    let msg_pack_path = {
-        let path = Path::new(jsonl_path);
-        let file_stem = path.file_stem() // get the filename without extension
-            .expect("Invalid file path")
-            .to_str()
-            .expect("Invalid file path");
-        let mut out_path = Path::new(out_folder).join(file_stem);
-        out_path.set_extension("msgpack");
-        out_path
-    };
-    // read jsonl for testing
-    let data = conversations::read_jsonl(jsonl_path, template);
-    // parallelize the tokenization
-    let mut inputs: Vec<TokenizedInput> = data
-        .par_iter()
-        .map(|conv| {
-            let input_ids: Vec<u32> = globals::tokenize(conv).get_ids().to_owned();
-            let mut labels: Vec<i32> = input_ids.iter().map(|x| *x as i32).collect();
-            // replace labels.0 with -100
-            labels[0] = -100;
-            let position_ids = (0..input_ids.len() as u32).collect();
-            let length = input_ids.len() as u32;
-            conversations::TokenizedInput {
-                input_ids,
-                labels,
-                position_ids,
-                length,
-            }
-        })
-        .collect();
-    
-    inputs.sort_by(|a, b| b.length.cmp(&a.length));
-
-    // bin packing
-    let max_length = 8192;
-    let bins = binpacking::create_bins(inputs, max_length);
-
-    // serialize the bins
-    let encoded = rmp_serde::to_vec(&bins).unwrap();
-    fs::write(msg_pack_path, encoded)?;
-    CURRENT_JSONL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    println!(
-        "Processed {} out of {}",
-        CURRENT_JSONL.load(std::sync::atomic::Ordering::SeqCst),
-        TOTAL_JSONL.load(std::sync::atomic::Ordering::SeqCst)
-    );
-
-    Ok(())
-
-    }
 fn main() -> std::io::Result<()> {
 
     let args = args::Cli::parse();
@@ -100,14 +45,14 @@ fn main() -> std::io::Result<()> {
             }
         })
         .map(|path| {
-            TOTAL_JSONL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            globals::TOTAL_JSONL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             path
         })
         .collect::<Vec<_>>()
         .par_iter()
         .map(|path| {
             let path = path.to_str().unwrap();
-            single_jsonl_process(path, &out_folder, template.clone())
+            conversations::single_jsonl_process(path, &out_folder, template.clone())
         })
         .collect::<Result<Vec<_>, std::io::Error>>()?;
     

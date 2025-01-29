@@ -1,6 +1,8 @@
 // src/globals.rs
 use std::sync::OnceLock;
+use std::sync::atomic::AtomicU64;
 use tokenizers;
+
 
 /// Tokenizer object
 ///
@@ -19,6 +21,8 @@ use tokenizers;
 /// ```
 static TOKENIZER: OnceLock<tokenizers::Tokenizer> = OnceLock::new();
 
+pub static TOTAL_JSONL: AtomicU64 = AtomicU64::new(0);
+pub static CURRENT_JSONL: AtomicU64 = AtomicU64::new(0);
 /// Helper function to tokenize directly
 ///
 /// This function will tokenize the content and return the encoding directly, abstracting the need to call `get` and `unwrap` on the OnceLock.
