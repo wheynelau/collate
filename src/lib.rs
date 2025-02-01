@@ -10,7 +10,10 @@ pub mod config;
 
 #[pyfunction]
 #[pyo3(signature = (input, tokenizer, max_length, out_folder=None))]
-fn collate_jsonl(input: String, tokenizer: String, max_length:u32, out_folder: Option<String>) -> PyResult<Vec<conversations::TokenizedInput>> {
+fn collate_jsonl(input: String,
+    tokenizer: String,
+    max_length:i32,
+    out_folder: Option<String>) -> PyResult<Vec<conversations::TokenizedInput>> {
     globals::init_tokenizer(&tokenizer);
     // read config
 

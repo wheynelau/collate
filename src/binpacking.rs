@@ -16,7 +16,7 @@ use rayon::prelude::*;
 // curr_length = 0
 // return Dataset.from_list(bins)
 /// Takes in a sorted list of TokenizedInput and creates bins of TokenizedInput
-pub fn create_bins(mut inputs: Vec<TokenizedInput>, max_length: u32) -> Vec<TokenizedInput> {
+pub fn create_bins(mut inputs: Vec<TokenizedInput>, max_length: i32) -> Vec<TokenizedInput> {
     
     let normalized_inputs: Vec<TokenizedInput> = inputs
         .par_chunks_mut(1_000_000usize)

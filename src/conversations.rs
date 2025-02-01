@@ -1,6 +1,12 @@
 use pyo3::IntoPyObject;
 use serde::{Deserialize, Serialize};
+use std::fs::File;
 use std::{fs, path::Path};
+use arrow::array::{ Int32Array, Int16Array };
+use arrow::datatypes::{ Schema, Field, DataType };
+use arrow::record_batch::RecordBatch;
+use arrow::ipc:: writer::FileWriter;
+use std::sync::Arc;
 
 use rayon::prelude::*;
 use indicatif::{ParallelProgressIterator,ProgressStyle,ProgressBar};
@@ -21,10 +27,10 @@ pub struct Conversation {
 
 #[derive(Clone, Serialize, IntoPyObject)]
 pub struct TokenizedInput {
-    pub input_ids: Vec<u32>,
+    pub input_ids: Vec<i32>, // use i32 for arrow
     pub labels: Vec<i32>,
-    pub position_ids: Vec<u32>,
-    pub length : u32,
+    pub position_ids: Vec<i32>,
+    pub length : i32,
 }
 
 impl TokenizedInput {
@@ -91,6 +97,17 @@ fn get_msgpack_path(jsonl_path: &str, out_folder: String) -> String {
     out_path.to_str().unwrap().to_string()
 }
 
+fn get_arrow_path(jsonl_path: &str, out_folder: String) -> String {
+    let path = Path::new(jsonl_path);
+    let file_stem = path.file_stem() // get the filename without extension
+        .expect("Invalid file path")
+        .to_str()
+        .expect("Invalid file path");
+    let mut out_path = Path::new(&out_folder).join(file_stem);
+    out_path.set_extension("arrow");
+    out_path.to_str().unwrap().to_string()
+}
+
 fn tokenize_data(data:Vec<String>) -> Vec<TokenizedInput> {
     let style = ProgressStyle::with_template("Tokenizing: [{elapsed_precise} / {eta_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
         .expect("Invalid progress style");
@@ -101,11 +118,12 @@ fn tokenize_data(data:Vec<String>) -> Vec<TokenizedInput> {
         .progress_with(pb)
         .map(|conv| {
             let input_ids: Vec<u32> = globals::tokenize(conv).get_ids().to_owned();
-            let mut labels: Vec<i32> = input_ids.iter().map(|x| *x as i32).collect();
+            let input_ids: Vec<i32> = input_ids.iter().map(|x| *x as i32).collect();
+            let mut labels: Vec<i32> = input_ids.clone();
             // replace labels.0 with -100
             labels[0] = -100;
-            let position_ids = (0..input_ids.len() as u32).collect();
-            let length = input_ids.len() as u32;
+            let position_ids = (0..input_ids.len() as i32).collect();
+            let length = input_ids.len() as i32;
             TokenizedInput {
                 input_ids,
                 labels,
@@ -120,7 +138,7 @@ fn tokenize_data(data:Vec<String>) -> Vec<TokenizedInput> {
 
 pub fn python_process_jsonl(jsonl_path: &str, 
     template: template::ChatTemplate,
-    max_length: u32,
+    max_length: i32,
     out_folder: Option<String>,
     ) -> Result<Vec<TokenizedInput>, std::io::Error> {
     
@@ -145,10 +163,41 @@ pub fn python_process_jsonl(jsonl_path: &str,
     Ok(bins)
 }
 
+fn save_to_arrow(data: Vec<TokenizedInput>, path: &str) -> std::io::Result<()> {
+    // let input_ids = data.iter().map(|x| x.input_ids.clone() as Vec<i32>).collect::<Vec<_>>();
+    // let labels = data.iter().map(|x| x.labels.clone()).collect::<Vec<_>>();
+    // let position_ids = data.iter().map(|x| x.position_ids.clone()).collect::<Vec<_>>();
+    // let length = data.iter().map(|x| x.length).collect::<Vec<_>>();
+    let schema = Schema::new(vec![
+        Field::new("input_ids", DataType::Int32, false),
+        Field::new("labels", DataType::Int32, false),
+        Field::new("position_ids", DataType::Int32, false),
+    ]);
+    let path = Path::new(path);
+    let mut buffer = File::create(path).expect("create file error");
+    let mut writer = FileWriter::try_new(&mut buffer, &schema).expect("Error creating writer");
+    for line in data.iter() {
+        let input_ids = Int32Array::from(line.input_ids.clone());
+        let labels = Int32Array::from(line.labels.clone());
+        let position_ids = Int32Array::from(line.position_ids.clone());
+        let batch = RecordBatch::try_new(
+            Arc::new(schema.clone()), 
+            vec![Arc::new(input_ids), 
+            Arc::new(labels), 
+            Arc::new(position_ids), 
+            ])
+            .expect("Error creating record batch");
+        
+        writer.write(&batch).expect("Error writing to file");
+        }
+        writer.finish().expect("Error finishing writing to file");
+    Ok(())
+}
+
 pub fn single_jsonl_process(jsonl_path: &str, 
     out_folder: &str,
     template: template::ChatTemplate) -> std::io::Result<()> {
-    let msg_pack_path = get_msgpack_path(jsonl_path, out_folder.to_string());
+    let arrow_path = get_arrow_path(jsonl_path, out_folder.to_string());
     // read jsonl for testing
     let data = read_jsonl(jsonl_path, template);
     // parallelize the tokenization
@@ -158,8 +207,9 @@ pub fn single_jsonl_process(jsonl_path: &str,
     let bins = binpacking::create_bins(inputs, max_length);
 
     // serialize the bins
-    let encoded = rmp_serde::to_vec(&bins).unwrap();
-    fs::write(msg_pack_path, encoded)?;
+    // let encoded = rmp_serde::to_vec(&bins).unwrap();
+    // fs::write(msg_pack_path, encoded)?;
+    save_to_arrow(bins, arrow_path.as_str())?;
     globals::CURRENT_JSONL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     println!(
         "Processed {} out of {}",
