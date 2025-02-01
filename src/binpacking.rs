@@ -1,5 +1,5 @@
 use crate::conversations::TokenizedInput;
-
+use rayon::prelude::*;
 /// python reference implementation
 /// while i < limit:
 // if curr_length == 0:
@@ -16,24 +16,47 @@ use crate::conversations::TokenizedInput;
 // curr_length = 0
 // return Dataset.from_list(bins)
 /// Takes in a sorted list of TokenizedInput and creates bins of TokenizedInput
-pub fn create_bins(inputs: Vec<TokenizedInput>, max_length: u32) -> Vec<TokenizedInput> {
-    let mut bins: Vec<TokenizedInput> = Vec::new();
-    let mut curr_length = 0;
-    let mut i = 0;
-    while i < inputs.len() as u32 {
-        if curr_length == 0 {
-            curr_length += inputs[i as usize].length;
-            bins.push(inputs[i as usize].clone());
-            i += 1;
-        } else if curr_length + inputs[i as usize].length <= max_length {
-            bins.last_mut().unwrap().merge(&inputs[i as usize]);
-            curr_length += inputs[i as usize].length;
-            i += 1;
-        } else {
-            curr_length = 0;
-        }
-    }
-    bins
+pub fn create_bins(mut inputs: Vec<TokenizedInput>, max_length: u32) -> Vec<TokenizedInput> {
+    
+    let normalized_inputs: Vec<TokenizedInput> = inputs
+        .par_chunks_mut(1_000_000usize)
+        .flat_map(|chunk| {
+            let mut current_bin = Vec::new();
+            let mut current_length = 0;
+            let mut bin = None;
+
+            for input in chunk.iter() {
+                let input_length = input.length;
+                
+                if current_length == 0 {
+                    if input_length > max_length {
+                        continue;
+                    }
+                    bin = Some(input.clone());
+                    current_length = input_length;
+                } else if current_length + input_length <= max_length {
+                    if let Some(ref mut b) = bin {
+                        b.merge(input);
+                    }
+                    current_length += input_length;
+                } else {
+                    if let Some(b) = bin.take() {
+                        current_bin.push(b);
+                    }
+                    bin = Some(input.clone());
+                    current_length = input_length;
+                }
+            }
+            
+            if let Some(b) = bin {
+                current_bin.push(b);
+            }
+            
+            current_bin
+        })
+        .collect();
+
+    normalized_inputs
 }
 
 #[cfg(test)]

@@ -75,6 +75,9 @@ pub fn tokenize(content: &str) -> tokenizers::Encoding {
 ///
 /// // Continue with the program
 pub fn init_tokenizer(tokenizer_name: &String) {
+    if TOKENIZER.get().is_some() {
+        return; // Already initialized
+    };
     if tokenizer_name.ends_with(".json") {
         println!("Loading tokenizer from file: {}", tokenizer_name);
         TOKENIZER

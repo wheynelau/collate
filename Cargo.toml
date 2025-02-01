@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.5.27", features = ["derive"] }
 hf-hub = "0.3.2"
+indicatif = { version = "0.17.11", features = ["rayon"] }
 minijinja = "2.7.0"
 minijinja-contrib = { version = "2.7.0", features = ["pycompat"] }
 pyo3 = { version = "0.23.4", features = ["extension-module"] }

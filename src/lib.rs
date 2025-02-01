@@ -9,8 +9,8 @@ pub mod binpacking;
 pub mod config;
 
 #[pyfunction]
-#[pyo3(signature = (input, tokenizer, out_folder=None))]
-fn collate_jsonl(input: String, tokenizer: String,out_folder: Option<String>) -> PyResult<Vec<conversations::TokenizedInput>> {
+#[pyo3(signature = (input, tokenizer, max_length, out_folder=None))]
+fn collate_jsonl(input: String, tokenizer: String, max_length:u32, out_folder: Option<String>) -> PyResult<Vec<conversations::TokenizedInput>> {
     globals::init_tokenizer(&tokenizer);
     // read config
 
@@ -24,6 +24,7 @@ fn collate_jsonl(input: String, tokenizer: String,out_folder: Option<String>) ->
     let result = conversations::python_process_jsonl(
         &input,
         template,
+        max_length,
         out_folder
     )?;
 

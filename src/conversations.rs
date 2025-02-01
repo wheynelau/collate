@@ -1,12 +1,14 @@
 use pyo3::IntoPyObject;
 use serde::{Deserialize, Serialize};
 use std::{fs, path::Path};
+
 use rayon::prelude::*;
+use indicatif::{ParallelProgressIterator,ProgressStyle,ProgressBar};
 
 use crate::{binpacking, globals, template};
 
 #[derive(Debug, Serialize, Deserialize)]
-struct __Conversation {
+pub struct __Conversation {
     #[serde(alias = "conversations")]
     conversation: Vec<template::TextMessage>,
     
@@ -36,16 +38,48 @@ impl TokenizedInput {
 }
 
 pub fn read_jsonl(jsonl_path: &str, ct: template::ChatTemplate) -> Vec<String> {
+    // Is this faster than using BufReader?
     let jsonl = fs::read_to_string(jsonl_path).unwrap();
-    let mut conversations: Vec<String> = Vec::new();
-    for line in jsonl.lines() {
-        let conv: __Conversation = serde_json::from_str(line).unwrap();
-        let result = ct.apply(conv.conversation).unwrap();
-        conversations.push(result);
-    }
+    let length = jsonl.lines().count();
+    println!("Number of lines: {}", length);
+    let style = ProgressStyle::with_template("Serializing: [{elapsed_precise} / {eta_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
+        .expect("Invalid progress style");
+    let pb = ProgressBar::new(length as u64);
+    pb.set_style(style);
+    let conversations: Vec<String> = jsonl
+        .par_lines()
+        .progress_with(pb)
+        .map(|item| {
+            let conv: __Conversation = serde_json::from_str(item).unwrap();
+            let result = ct.apply(conv.conversation).unwrap();
+            result
+        }).collect();
     conversations
 }
 
+// pub fn read_jsonl(jsonl_path: &str, ct: template::ChatTemplate) -> Vec<String> {
+//     let file = File::open(jsonl_path).unwrap();
+//     let mut reader = BufReader::new(file);
+//     println!("Reading jsonl file: {}", jsonl_path);
+//     // Count lines
+//     let line_count = reader.lines().count();
+//     println!("Number of lines: {}", line_count);
+//     // Reset reader position to start
+//     reader.seek(SeekFrom::Start(0)).unwrap();
+    
+//     // Pre-allocate vector with capacity
+//     let mut conversations: Vec<String> = Vec::with_capacity(line_count);
+
+//     let style = ProgressStyle::with_template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}");
+    
+//     for line in reader.lines().progress_with_style {
+//         let line = line.unwrap();
+//         let conv: Conversation = serde_json::from_str(&line).unwrap();
+//         let result = ct.apply(conv.conversation).unwrap();
+//         conversations.push(result);
+//     }
+//     conversations
+// }
 fn get_msgpack_path(jsonl_path: &str, out_folder: String) -> String {
     let path = Path::new(jsonl_path);
     let file_stem = path.file_stem() // get the filename without extension
@@ -58,8 +92,13 @@ fn get_msgpack_path(jsonl_path: &str, out_folder: String) -> String {
 }
 
 fn tokenize_data(data:Vec<String>) -> Vec<TokenizedInput> {
+    let style = ProgressStyle::with_template("Tokenizing: [{elapsed_precise} / {eta_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
+        .expect("Invalid progress style");
+    let pb = ProgressBar::new(data.len() as u64);
+    pb.set_style(style);
     let mut inputs:Vec<TokenizedInput> = data
         .par_iter()
+        .progress_with(pb)
         .map(|conv| {
             let input_ids: Vec<u32> = globals::tokenize(conv).get_ids().to_owned();
             let mut labels: Vec<i32> = input_ids.iter().map(|x| *x as i32).collect();
@@ -81,16 +120,20 @@ fn tokenize_data(data:Vec<String>) -> Vec<TokenizedInput> {
 
 pub fn python_process_jsonl(jsonl_path: &str, 
     template: template::ChatTemplate,
-    out_folder: Option<String>,) -> Result<Vec<TokenizedInput>, std::io::Error> {
+    max_length: u32,
+    out_folder: Option<String>,
+    ) -> Result<Vec<TokenizedInput>, std::io::Error> {
     
     // read jsonl for testing
     let data = read_jsonl(jsonl_path, template);
     // parallelize the tokenization
     let inputs: Vec<TokenizedInput> = tokenize_data(data);
     // bin packing
-    let max_length = 8192;
+    
+    println!("Creating bins");
     let bins = binpacking::create_bins(inputs, max_length);
 
+    println!("Done!");
     // serialize the bins
     let encoded = rmp_serde::to_vec(&bins).unwrap();
     if let Some(out_folder) = out_folder {
@@ -102,7 +145,9 @@ pub fn python_process_jsonl(jsonl_path: &str,
     Ok(bins)
 }
 
-pub fn single_jsonl_process(jsonl_path: &str, out_folder: &str,template: template::ChatTemplate) -> std::io::Result<()> {
+pub fn single_jsonl_process(jsonl_path: &str, 
+    out_folder: &str,
+    template: template::ChatTemplate) -> std::io::Result<()> {
     let msg_pack_path = get_msgpack_path(jsonl_path, out_folder.to_string());
     // read jsonl for testing
     let data = read_jsonl(jsonl_path, template);
