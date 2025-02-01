@@ -1,5 +1,15 @@
+// Handles bin packing of TokenizedInput
+
 use crate::conversations::TokenizedInput;
-use rayon::prelude::*;
+use std::fs::File;
+use std::path::Path;
+use arrow::array::Int32Array;
+use arrow::datatypes::{ Schema, Field, DataType };
+use arrow::record_batch::RecordBatch;
+use arrow::ipc:: writer::FileWriter;
+use std::sync::Arc;
+
+use indicatif::{ProgressIterator,ProgressStyle,ProgressBar};
 /// python reference implementation
 /// while i < limit:
 // if curr_length == 0:
@@ -16,49 +26,72 @@ use rayon::prelude::*;
 // curr_length = 0
 // return Dataset.from_list(bins)
 /// Takes in a sorted list of TokenizedInput and creates bins of TokenizedInput
-pub fn create_bins(mut inputs: Vec<TokenizedInput>, max_length: i32) -> Vec<TokenizedInput> {
-    
-    let normalized_inputs: Vec<TokenizedInput> = inputs
-        .par_chunks_mut(1_000_000usize)
-        .flat_map(|chunk| {
-            let mut current_bin = Vec::new();
-            let mut current_length = 0;
-            let mut bin = None;
-
-            for input in chunk.iter() {
-                let input_length = input.length;
-                
-                if current_length == 0 {
-                    if input_length > max_length {
-                        continue;
-                    }
-                    bin = Some(input.clone());
-                    current_length = input_length;
-                } else if current_length + input_length <= max_length {
-                    if let Some(ref mut b) = bin {
-                        b.merge(input);
-                    }
-                    current_length += input_length;
-                } else {
-                    if let Some(b) = bin.take() {
-                        current_bin.push(b);
-                    }
-                    bin = Some(input.clone());
-                    current_length = input_length;
-                }
-            }
-            
-            if let Some(b) = bin {
-                current_bin.push(b);
-            }
-            
-            current_bin
-        })
-        .collect();
-
-    normalized_inputs
+pub fn create_bins(inputs: Vec<TokenizedInput>, max_length: i32) -> Vec<TokenizedInput> {
+    let mut bins: Vec<TokenizedInput> = Vec::new();
+    let mut curr_length = 0;
+    let mut inputs_iter = inputs.into_iter();
+    while let Some(input) = inputs_iter.next() {
+        if curr_length == 0 {
+            curr_length += input.length;
+            bins.push(input)
+        } else if curr_length + input.length <= max_length {
+            curr_length += input.length;
+            bins.last_mut().unwrap().merge(&input);
+        } else {
+            curr_length = input.length;
+            bins.push(input);
+        }
+    }
+    bins
 }
-
+pub fn bin_and_save(inputs: BinaryHeap<TokenizedInput>, max_length: i32, arrow_path: String) {
+    let style = ProgressStyle::with_template("Writing: [{elapsed_precise} / {eta_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {per_sec}")
+    .expect("Invalid progress style");
+    let pb = ProgressBar::new(inputs.len() as u64);
+    pb.set_style(style);
+    let mut curr_length = 0;
+    let mut curr_bin = TokenizedInput::new();
+    let schema = Schema::new(vec![
+        Field::new("input_ids", DataType::Int32, false),
+        Field::new("labels", DataType::Int32, false),
+        Field::new("position_ids", DataType::Int32, false),
+    ]);
+    let path = Path::new(&arrow_path);
+    let mut buffer = File::create(path).expect("create file error");
+    let mut writer = FileWriter::try_new(&mut buffer, &schema).expect("Error creating writer");
+    while let Some(input) = inputs.pop() {
+        pb.inc(1);
+        // always starts here
+        if curr_length == 0 {
+            curr_length = input.length;
+            curr_bin.merge(&input);
+        } else if curr_length + input.length <= max_length {
+            curr_length += input.length;
+            curr_bin.merge(&input);
+        } else {
+            curr_length = input.length;
+            write_bin_to_writer(curr_bin, &mut writer, &schema);
+            curr_bin = input;
+        }
+    }
+    write_bin_to_writer(curr_bin, &mut writer, &schema);
+    println!("Finished writing to file");
+    writer.finish().expect("Error finishing writing to file");
+}
+fn write_bin_to_writer<W>(bin: TokenizedInput, writer: &mut FileWriter<W>, schema: &Schema)  where W: std::io::Write {
+    let input_ids = Int32Array::from(bin.input_ids.clone());
+    let labels = Int32Array::from(bin.labels.clone());
+    let position_ids = Int32Array::from(bin.position_ids.clone());
+    let batch = RecordBatch::try_new(
+        Arc::new(schema.clone()), 
+        vec![Arc::new(input_ids), 
+        Arc::new(labels), 
+        Arc::new(position_ids), 
+        ])
+        .expect("Error creating record batch");
+    
+    writer.write(&batch).expect("Error writing to file");
+}
 #[cfg(test)]
 mod tests {
     use super::*;

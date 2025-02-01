@@ -10,6 +10,7 @@ pub mod template;
 pub mod conversations;
 pub mod binpacking;
 pub mod config;
+pub mod utils;
 
 fn main() -> std::io::Result<()> {
 
