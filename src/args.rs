@@ -26,5 +26,5 @@ pub struct Cli {
         help = "Format of output file, [jsonl,arrow,msgpack]",
         default_value = "arrow"
     )]
-    pub format: String
+    pub format: String,
 }

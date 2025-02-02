@@ -1,16 +1,16 @@
 // Handles bin packing of TokenizedInput
 
-use crate::{conversations::TokenizedInput};
+use crate::conversations::TokenizedInput;
 use arrow::array::Int32Array;
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::ipc::writer::StreamWriter;
 use arrow::record_batch::RecordBatch;
+use crossbeam_channel::{unbounded, Receiver, Sender};
 use std::collections::BinaryHeap;
 use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::sync::Arc;
-use std::io::{BufWriter, Write};
-use crossbeam_channel::{unbounded, Receiver, Sender};
 
 use indicatif::{ProgressBar, ProgressStyle};
 /// python reference implementation
@@ -29,10 +29,15 @@ use indicatif::{ProgressBar, ProgressStyle};
 // curr_length = 0
 // return Dataset.from_list(bins)
 /// Takes in a max heap of TokenizedInput and bins them into a max_length
-fn writer (rx: Receiver<TokenizedInput>, arrow_path: String, schema: Schema) -> Result<(), Box<dyn std::error::Error>> {
+fn writer(
+    rx: Receiver<TokenizedInput>,
+    arrow_path: String,
+    schema: Schema,
+) -> Result<(), Box<dyn std::error::Error>> {
     let path = Path::new(&arrow_path);
     let mut buffer = File::create(path).expect("create file error");
-    let mut writer = StreamWriter::try_new_buffered(&mut buffer, &schema).expect("Error creating writer");
+    let mut writer =
+        StreamWriter::try_new_buffered(&mut buffer, &schema).expect("Error creating writer");
     while let Ok(input) = rx.recv() {
         write_bin_to_writer(input, &mut writer, &schema);
     }
@@ -99,7 +104,11 @@ where
     writer.write(&batch).expect("Error writing to file");
 }
 
-pub fn bin_save_to_jsonl(mut inputs: BinaryHeap<TokenizedInput>, max_length: i32, jsonl_path: String) {
+pub fn bin_save_to_jsonl(
+    mut inputs: BinaryHeap<TokenizedInput>,
+    max_length: i32,
+    jsonl_path: String,
+) {
     let style = ProgressStyle::with_template("Writing: [{elapsed_precise} / {eta_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {per_sec}")
     .expect("Invalid progress style");
     let pb = ProgressBar::new(inputs.len() as u64);
