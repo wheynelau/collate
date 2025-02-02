@@ -79,10 +79,11 @@ dataset = Dataset.from_file("output/file.arrow")
 
 ## Issues and caveats
 - Only tokenizers with chat_template, bos_token, eos_token are supported
+- The format of the jsonl must contain a field called conversation, which is a list of dict with keys content and role
 
 ## Roadmap
-[x] Integrate with python directly with Maturin - Completed but not very performant
-[ ] Add more tests
-[ ] Python reference code - For understanding
-[ ] Reduce memory overhead
-[ ] Implement mmap
+[x] Integrate with python directly with Maturin - Completed but not very performant  
+[ ] Add more tests  
+[ ] Python reference code - For understanding  
+[ ] Reduce memory overhead  
+[ ] Implement mmap  
