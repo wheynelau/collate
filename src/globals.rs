@@ -3,7 +3,6 @@ use std::sync::atomic::AtomicU64;
 use std::sync::OnceLock;
 use tokenizers;
 
-
 /// Tokenizer object
 ///
 /// This is a `OnceLock<tokenizers::Tokenizer>` that will be initialized when called with

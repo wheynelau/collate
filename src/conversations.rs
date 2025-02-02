@@ -1,17 +1,11 @@
 use serde::{Deserialize, Serialize};
-use std::fs::File;
-use std::{fs, path::Path};
-use arrow::array::Int32Array;
-use arrow::datatypes::{ Schema, Field, DataType };
-use arrow::record_batch::RecordBatch;
-use arrow::ipc:: writer::FileWriter;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
+use std::sync::{Arc, Mutex};
+use std::{fs, path::Path};
 
+use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
-use indicatif::{ParallelProgressIterator,ProgressIterator,ProgressStyle,ProgressBar};
 
 use crate::{binpacking, globals, template, time_it};
 
@@ -19,7 +13,6 @@ use crate::{binpacking, globals, template, time_it};
 pub struct Conversation {
     #[serde(alias = "conversations")]
     conversation: Vec<template::TextMessage>,
-    
 }
 
 #[derive(Clone, Serialize)]
@@ -166,7 +159,7 @@ pub fn single_jsonl_process(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_merge() {
         let mut left = TokenizedInput {

@@ -1,7 +1,6 @@
 use std::fs;
 
 use clap::Parser;
-use rayon::prelude::*;
 use std::path::Path;
 
 pub mod args;
@@ -53,7 +52,12 @@ fn main() -> std::io::Result<()> {
         .iter()
         .map(|path| {
             let path = path.to_str().unwrap();
-            conversations::single_jsonl_process(path, &out_folder, template.clone(), args.format.clone())
+            conversations::single_jsonl_process(
+                path,
+                &out_folder,
+                template.clone(),
+                args.format.clone(),
+            )
         })
         .collect::<Result<Vec<_>, std::io::Error>>()?;
 
