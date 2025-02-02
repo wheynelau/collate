@@ -2,7 +2,7 @@
 
 Pet project on learning the data collation for huggingface [link](https://huggingface.co/blog/packing-with-FA2)
 
-I have added a python reference [here](./python_reference.py) for the implementation.
+[In progress] I have added a python reference here for the implementation. 
 
 ## Pre-requisites
 
@@ -37,11 +37,11 @@ cargo run --release -- --help
 
 This program reads a folder with jsonl files and packs them into a msgpack for python.
 
-Usage: collate --input <INPUT> --output <OUTPUT> --tokenizer <TOKENIZER>
+Usage: collate [OPTIONS] --input <INPUT> --output <OUTPUT> --tokenizer <TOKENIZER> --format <FORMAT>
 
 Options:
   -i, --input <INPUT>
-          Input to the root folder, should contain jsonl files like so - path/*.jsonl
+          Input to the root folder, should contain jsonl files like so - path/*.jsonl or just a single file
 
   -o, --output <OUTPUT>
           Output folder for the JSONL files, will write the jsonl as their own files
@@ -49,6 +49,11 @@ Options:
 
   -t, --tokenizer <TOKENIZER>
           Accepts huggingface <org>/<name> format for the tokenizer
+
+  -f, --format <FORMAT>
+          Format of output file, [jsonl,arrow,msgpack]
+
+          [default: arrow]
 
   -h, --help
           Print help (see a summary with '-h')
@@ -58,28 +63,18 @@ Options:
 ```
 
 ```bash
-cargo run --release -- -i data/ -o output/ -t mlx-community/Llama-3.2-1B-Instruct-4bit
+cargo run --release -- -i data/ -o output/ -t mlx-community/Llama-3.2-1B-Instruct-4bit -f arrow
 ```
 
-Postprocessing step:
+### Loading from python
+
+The preferred method is to use arrow format, as it is the most performant. It can be read directly with datasets library.
 
 ```python
 # currently the fields are hardcoded for training, but can be modified to suit the needs
 # also assume the data has correct fields
-import msgpack
-
-def read_msgpack(filepath):
-    with open(filepath, 'rb') as f:
-        data = msgpack.unpackb(f.read(), raw=False)
-    return data
-
 from datasets import Dataset
-def gen_data(data):
-    for row in data:
-        yield {"input_ids": row[0], "labels": row[1], "position_ids": row[2],"length": row[3]}
-
-data = read_msgpack("output/0.msgpack")
-dataset = Dataset.from_generator(gen_data, {"data": data})
+dataset = Dataset.from_file("output/file.arrow")
 ```
 
 ## Issues and caveats
@@ -90,3 +85,4 @@ dataset = Dataset.from_generator(gen_data, {"data": data})
 [ ] Add more tests
 [ ] Python reference code - For understanding
 [ ] Reduce memory overhead
+[ ] Implement mmap
