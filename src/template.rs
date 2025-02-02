@@ -48,16 +48,14 @@ impl ChatTemplate {
         }
     }
     pub fn apply(&self, messages: Vec<TextMessage>) -> Result<String, Error> {
-        self.template
-            .render(ChatTemplateInputs {
-                messages,
-                bos_token: self.bos_token.as_deref(),
-                eos_token: self.eos_token.as_deref(),
-                add_generation_prompt: false,
-            })
+        self.template.render(ChatTemplateInputs {
+            messages,
+            bos_token: self.bos_token.as_deref(),
+            eos_token: self.eos_token.as_deref(),
+            add_generation_prompt: false,
+        })
     }
 }
-
 
 // tests
 #[cfg(test)]
@@ -211,14 +209,12 @@ mod tests {
             ..Default::default()
         };
 
-
         let result = tmpl.unwrap().render(chat_template_inputs).unwrap();
 
         assert_eq!(
             result,
             "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nCutting Knowledge Date: December 2023\nToday Date: 26 Jul 2024\n\n<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nWhat is the capital of Singapore?<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\nI don't know, what is it?<|eot_id|>"
         );
-
     }
     #[test]
     fn test_chat_template() {
@@ -337,7 +333,6 @@ mod tests {
             result,
             "### User:\nHi!\n\n### Assistant:\nHello how can I help?### User:\nWhat is Deep Learning?\n\n### Assistant:\nmagic!"
         );
-
     }
     #[test]
     fn test_with_tokenize() {
@@ -395,6 +390,5 @@ mod tests {
             result,
             "### User:\nHi!\n\n### Assistant:\nHello how can I help?### User:\nWhat is Deep Learning?\n\n### Assistant:\nmagic!"
         );
-
     }
 }

@@ -4,7 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.95"
+arrow = "54.0.0"
 clap = { version = "4.5.27", features = ["derive"] }
+crossbeam-channel = "0.5.14"
 hf-hub = "0.3.2"
 minijinja = "2.7.0"
 minijinja-contrib = { version = "2.7.0", features = ["pycompat"] }

@@ -1,14 +1,13 @@
 /// Handles the downloading of configuration files
 /// Reference from hf tokenizers for downloading:
 /// https://github.com/huggingface/tokenizers/blob/c45aebd1029acfbe9e5dfe64e8b8441d9fae727a/tokenizers/src/utils/from_pretrained.rs#L26
-
 use hf_hub::{api::sync::ApiBuilder, Repo, RepoType};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 #[derive(Deserialize, Debug)]
-pub struct TokenizerConfig{
+pub struct TokenizerConfig {
     pub bos_token: String,
     pub eos_token: String,
     pub chat_template: String,
@@ -99,4 +98,3 @@ mod tests {
         assert_eq!(config.eos_token, "<|eot_id|>");
     }
 }
-

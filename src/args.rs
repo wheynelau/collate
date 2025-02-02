@@ -17,7 +17,14 @@ pub struct Cli {
     #[clap(
         short,
         long,
-        help = "Accepts huggingface <org>/<name> format for the tokenizer",
+        help = "Accepts huggingface <org>/<name> format for the tokenizer"
     )]
     pub tokenizer: String,
+    #[clap(
+        short,
+        long,
+        help = "Format of output file, [jsonl,arrow,msgpack]",
+        default_value = "arrow"
+    )]
+    pub format: String
 }

@@ -1,4 +1,5 @@
 // src/globals.rs
+use std::sync::atomic::AtomicU64;
 use std::sync::OnceLock;
 use tokenizers;
 

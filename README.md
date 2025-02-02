@@ -86,6 +86,7 @@ dataset = Dataset.from_generator(gen_data, {"data": data})
 - Only tokenizers with chat_template, bos_token, eos_token are supported
 
 ## Roadmap
-[ ] Integrate with python directly with Maturin
+[x] Integrate with python directly with Maturin - Completed but not very performant
 [ ] Add more tests
 [ ] Python reference code - For understanding
+[ ] Reduce memory overhead
