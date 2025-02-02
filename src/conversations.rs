@@ -1,29 +1,64 @@
 use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::{fs, path::Path};
+use arrow::array::Int32Array;
+use arrow::datatypes::{ Schema, Field, DataType };
+use arrow::record_batch::RecordBatch;
+use arrow::ipc:: writer::FileWriter;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use std::sync::{Arc, Mutex};
-use std::{fs, path::Path};
 
-use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
+use indicatif::{ParallelProgressIterator,ProgressIterator,ProgressStyle,ProgressBar};
 
-use crate::{binpacking, globals,template,time_it};
+use crate::{binpacking, globals, template, time_it};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Conversation {
     #[serde(alias = "conversations")]
     conversation: Vec<template::TextMessage>,
+    
 }
 
 #[derive(Clone, Serialize)]
 pub struct TokenizedInput {
-    pub input_ids: Vec<u32>,
+    pub input_ids: Vec<i32>, // use i32 for arrow
     pub labels: Vec<i32>,
     pub position_ids: Vec<i32>,
     pub length: i32,
 }
 
+impl Ord for TokenizedInput {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.length.cmp(&other.length)
+    }
+}
+
+impl PartialOrd for TokenizedInput {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for TokenizedInput {
+    fn eq(&self, other: &Self) -> bool {
+        self.length == other.length
+    }
+}
+
+impl Eq for TokenizedInput {}
+
 impl TokenizedInput {
+    pub fn new() -> Self {
+        TokenizedInput {
+            input_ids: Vec::new(),
+            labels: Vec::new(),
+            position_ids: Vec::new(),
+            length: 0,
+        }
+    }
     pub fn merge(&mut self, other: &TokenizedInput) {
         // Change the method to take &mut self instead of &self
         self.input_ids.extend(other.input_ids.clone());
@@ -131,7 +166,7 @@ pub fn single_jsonl_process(
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    
     #[test]
     fn test_merge() {
         let mut left = TokenizedInput {

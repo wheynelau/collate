@@ -3,6 +3,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::OnceLock;
 use tokenizers;
 
+
 /// Tokenizer object
 ///
 /// This is a `OnceLock<tokenizers::Tokenizer>` that will be initialized when called with
@@ -20,6 +21,8 @@ use tokenizers;
 /// ```
 static TOKENIZER: OnceLock<tokenizers::Tokenizer> = OnceLock::new();
 
+pub static TOTAL_JSONL: AtomicU64 = AtomicU64::new(0);
+pub static CURRENT_JSONL: AtomicU64 = AtomicU64::new(0);
 /// Helper function to tokenize directly
 ///
 /// This function will tokenize the content and return the encoding directly, abstracting the need to call `get` and `unwrap` on the OnceLock.
@@ -72,6 +75,9 @@ pub fn tokenize(content: &str) -> tokenizers::Encoding {
 ///
 /// // Continue with the program
 pub fn init_tokenizer(tokenizer_name: &String) {
+    if TOKENIZER.get().is_some() {
+        return; // Already initialized
+    };
     if tokenizer_name.ends_with(".json") {
         println!("Loading tokenizer from file: {}", tokenizer_name);
         TOKENIZER

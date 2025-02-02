@@ -26,7 +26,7 @@ sudo apt install libssl-dev pkg-config build-essential
 ### Installing to current directory
 
 ```bash
-cargo install <this-repo> .
+cargo install --git <this-repo> --branch main
 ```
 ## Usage
 

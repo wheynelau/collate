@@ -1,17 +1,17 @@
-use std::{fs, sync::atomic::AtomicU64};
+use std::fs;
 
 use clap::Parser;
-use conversations::TokenizedInput;
 use rayon::prelude::*;
 use std::path::Path;
 
 pub mod args;
 pub mod binpacking;
 pub mod config;
+#[macro_use]
+pub mod utils;
 pub mod conversations;
 pub mod globals;
 pub mod template;
-pub mod utils;
 
 fn main() -> std::io::Result<()> {
     let args = args::Cli::parse();
@@ -46,7 +46,7 @@ fn main() -> std::io::Result<()> {
             }
         })
         .map(|path| {
-            TOTAL_JSONL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            globals::TOTAL_JSONL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             path
         })
         .collect::<Vec<_>>()
