@@ -32,28 +32,29 @@ fn main() -> std::io::Result<()> {
         Some("<|begin_of_text|>".to_string()),
         Some("<|eot_id|>".to_string()),
     );
-
-    let paths = fs::read_dir(folder)?;
-    paths // filter only jsonl files
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let path = entry.path();
-            if path.extension()?.to_str()? == "jsonl" {
-                Some(path)
-            } else {
-                None
-            }
-        })
+    let paths : Vec<String> = {
+        let md = fs::metadata(&folder)?;
+        if md.is_file() {
+            vec![folder]
+        } else {
+            fs::read_dir(&folder)?
+                .filter_map(|entry| {
+                    let entry = entry.ok()?;
+                    let path = entry.path();
+                    if path.extension()?.to_str()? == "jsonl" {
+                        Some(path.into_os_string().into_string().unwrap())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+        }
+    };
+    globals::TOTAL_JSONL.fetch_add(paths.len().try_into().unwrap(), std::sync::atomic::Ordering::SeqCst);
+    paths.into_iter() // filter only jsonl files
         .map(|path| {
-            globals::TOTAL_JSONL.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            path
-        })
-        .collect::<Vec<_>>()
-        .iter()
-        .map(|path| {
-            let path = path.to_str().unwrap();
             conversations::single_jsonl_process(
-                path,
+                &path,
                 &out_folder,
                 template.clone(),
                 args.format.clone(),

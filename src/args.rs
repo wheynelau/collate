@@ -7,7 +7,7 @@ use clap::Parser;
     long_about = "This program reads a folder with jsonl files and packs them into a msgpack for python."
 )]
 pub struct Cli {
-    #[clap(short, long, help="Input to the root folder, should contain jsonl files like so - path/*.jsonl",
+    #[clap(short, long, help="Input to the root folder, should contain jsonl files like so - path/*.jsonl or just a single file",
     value_hint=clap::ValueHint::DirPath)]
     pub input: String,
     #[clap(short, long, help = "Output folder for the JSONL files, will write the jsonl as their own files
