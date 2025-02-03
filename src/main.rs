@@ -57,9 +57,9 @@ fn main() -> std::io::Result<()> {
         .into_iter() // filter only jsonl files
         .for_each(|path| {
             let _ = conversations::single_jsonl_process(
-                &path,
+                path,
                 args.max_length,
-                &out_folder,
+                out_folder.clone(),
                 template.clone(),
                 args.format.clone(),
                 &mut handles,

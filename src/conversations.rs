@@ -86,7 +86,7 @@ fn parse_and_tokenize(item: &str, ct: template::ChatTemplate) -> TokenizedInput 
     }
 }
 
-fn read_jsonl(jsonl_path: &str, ct: template::ChatTemplate) -> BinaryHeap<TokenizedInput> {
+fn tokenize_jsonl(jsonl_path: &str, ct: template::ChatTemplate) -> BinaryHeap<TokenizedInput> {
     // Is this faster than using BufReader?
     println!("Reading jsonl file: {}", jsonl_path);
     let jsonl = time_it!("Time to read: ", fs::read_to_string(jsonl_path).unwrap());
@@ -104,14 +104,13 @@ fn read_jsonl(jsonl_path: &str, ct: template::ChatTemplate) -> BinaryHeap<Tokeni
         let mut heap = heap.lock().unwrap();
         heap.push(input);
     });
-
     // return the heap
     let heap = heap.lock().unwrap();
     heap.clone()
 }
 
-fn get_jsonl_path(jsonl_path: &str, out_folder: String) -> String {
-    let path = Path::new(jsonl_path);
+fn get_jsonl_path(jsonl_path: String, out_folder: String) -> String {
+    let path = Path::new(&jsonl_path);
     let file_stem = path
         .file_stem() // get the filename without extension
         .expect("Invalid file path")
@@ -122,8 +121,8 @@ fn get_jsonl_path(jsonl_path: &str, out_folder: String) -> String {
     out_path.to_str().unwrap().to_string()
 }
 
-fn get_arrow_path(jsonl_path: &str, out_folder: String) -> String {
-    let path = Path::new(jsonl_path);
+fn get_arrow_path(jsonl_path: String, out_folder: String) -> String {
+    let path = Path::new(&jsonl_path);
     let file_stem = path
         .file_stem() // get the filename without extension
         .expect("Invalid file path")
@@ -135,30 +134,33 @@ fn get_arrow_path(jsonl_path: &str, out_folder: String) -> String {
 }
 
 pub fn single_jsonl_process(
-    jsonl_path: &str,
+    jsonl_path: String,
     max_length: i32,
-    out_folder: &str,
+    out_folder: String,
     template: template::ChatTemplate,
     format: String,
     handles: &mut Vec<std::thread::JoinHandle<()>>,
 ) -> std::io::Result<()> {
-    // read jsonl for testing
-    let inputs: BinaryHeap<TokenizedInput> = read_jsonl(jsonl_path, template);
-    // parallelize the tokenization
-    // let inputs = tokenize_data(data);
-    match format.to_ascii_lowercase().as_str() {
-        "arrow" => {
-            let arrow_path = get_arrow_path(jsonl_path, out_folder.to_string());
-            binpacking::bin_and_save(inputs, max_length, arrow_path, handles);
+    // read and tokenize in parallel
+    let inputs: BinaryHeap<TokenizedInput> = tokenize_jsonl(&jsonl_path, template);
+
+    // Dispatch the job to a thread because its not parallelisable and IO bound
+    let handle = std::thread::spawn(move || {
+        match format.to_ascii_lowercase().as_str() {
+            "arrow" => {
+                let arrow_path = get_arrow_path(jsonl_path, out_folder.to_string());
+                binpacking::bin_and_save(inputs, max_length, arrow_path);
+            }
+            "jsonl" => {
+                let jsonl_path = get_jsonl_path(jsonl_path, out_folder.to_string());
+                binpacking::bin_save_to_jsonl(inputs, max_length, jsonl_path);
+            }
+            _ => {
+                let _ = Err::<(), anyhow::Error>(anyhow::anyhow!("Format not supported"));
+            }
         }
-        "jsonl" => {
-            let jsonl_path = get_jsonl_path(jsonl_path, out_folder.to_string());
-            binpacking::bin_save_to_jsonl(inputs, max_length, jsonl_path);
-        }
-        _ => {
-            let _ = Err::<(), anyhow::Error>(anyhow::anyhow!("Format not supported"));
-        }
-    }
+    });
+    handles.push(handle);
     Ok(())
 }
 
@@ -185,6 +187,20 @@ mod tests {
         assert_eq!(left.labels, vec![1, 2, 3, 4, 5, 6]);
         assert_eq!(left.position_ids, vec![0, 1, 2, 0, 1, 2]);
         assert_eq!(left.length, 6);
+    }
+    #[test]
+    fn test_truncate() {
+        let mut input = TokenizedInput {
+            input_ids: vec![1, 2, 3],
+            labels: vec![1, 2, 3],
+            position_ids: vec![0, 1, 2],
+            length: 3,
+        };
+        input.truncate(2);
+        assert_eq!(input.input_ids, vec![1, 2]);
+        assert_eq!(input.labels, vec![1, 2]);
+        assert_eq!(input.position_ids, vec![0, 1]);
+        assert_eq!(input.length, 2);
     }
 
     #[test]

@@ -50,13 +50,8 @@ pub fn bin_and_save(
     mut inputs: BinaryHeap<TokenizedInput>,
     max_length: i32,
     arrow_path: String,
-    handles: &mut Vec<std::thread::JoinHandle<()>>,
 ) {
-    println!("Starting binning and saving to arrow");
-    let style = ProgressStyle::with_template("Writing: [{elapsed_precise} / {eta_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {per_sec}")
-    .expect("Invalid progress style");
-    let pb = ProgressBar::new(inputs.len() as u64);
-    pb.set_style(style);
+    println!("Dispatching binning and saving to {}", &arrow_path);
     let mut curr_length = 0;
     let mut curr_bin = TokenizedInput::new();
     let schema = Schema::new(vec![
@@ -78,7 +73,6 @@ pub fn bin_and_save(
     ]);
     let mut record_vec = Vec::new();
     while let Some(mut input) = inputs.pop() {
-        pb.inc(1);
         if input.length >= max_length {
             // add directly to record_vec
             input.truncate(max_length);
@@ -99,19 +93,14 @@ pub fn bin_and_save(
             curr_bin = input;
         }
     }
-
-    pb.finish();
-    let handle = std::thread::spawn(move || {
-        let mut buffer = File::create(&arrow_path).expect("create file error");
-        let mut writer =
-            StreamWriter::try_new_buffered(&mut buffer, &schema).expect("Error creating writer");
-        let msg = format!("Writing to {}", arrow_path);
-        time_it!(
-            msg,
-            write_bin_to_writer(record_vec, &mut writer, &schema)
-        );
-    });
-    handles.push(handle);
+    let mut buffer = File::create(&arrow_path).expect("create file error");
+    let mut writer =
+        StreamWriter::try_new_buffered(&mut buffer, &schema).expect("Error creating writer");
+    let msg = format!("Writing to {}", arrow_path);
+    time_it!(
+        msg,
+        write_bin_to_writer(record_vec, &mut writer, &schema)
+    );
 }
 fn from_iter_primitive_no_option<T, I>(iter: I) -> LargeListArray
 where
