@@ -32,7 +32,7 @@ fn main() -> std::io::Result<()> {
         Some("<|begin_of_text|>".to_string()),
         Some("<|eot_id|>".to_string()),
     );
-    let paths : Vec<String> = {
+    let paths: Vec<String> = {
         let md = fs::metadata(&folder)?;
         if md.is_file() {
             vec![folder]
@@ -50,8 +50,12 @@ fn main() -> std::io::Result<()> {
                 .collect::<Vec<_>>()
         }
     };
-    globals::TOTAL_JSONL.fetch_add(paths.len().try_into().unwrap(), std::sync::atomic::Ordering::SeqCst);
-    paths.into_iter() // filter only jsonl files
+    globals::TOTAL_JSONL.fetch_add(
+        paths.len().try_into().unwrap(),
+        std::sync::atomic::Ordering::SeqCst,
+    );
+    paths
+        .into_iter() // filter only jsonl files
         .for_each(|path| {
             let _ = conversations::single_jsonl_process(
                 &path,

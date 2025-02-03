@@ -1,13 +1,11 @@
 // Handles bin packing of TokenizedInput
 
 use crate::conversations::TokenizedInput;
-use arrow::array::{Int32Array, ListArray};
 use arrow::array::types::Int32Type;
+use arrow::array::ListArray;
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::ipc::writer::StreamWriter;
-use arrow::buffer::OffsetBuffer;
 use arrow::record_batch::RecordBatch;
-use crossbeam_channel::{unbounded, Receiver, Sender};
 use rayon::prelude::*;
 use std::collections::BinaryHeap;
 use std::fs::File;
@@ -56,9 +54,21 @@ pub fn bin_and_save(mut inputs: BinaryHeap<TokenizedInput>, max_length: i32, arr
     let mut curr_length = 0;
     let mut curr_bin = TokenizedInput::new();
     let schema = Schema::new(vec![
-        Field::new("input_ids", DataType::List(Arc::new(Field::new_list_field(DataType::Int32, true))), false),
-        Field::new("labels", DataType::List(Arc::new(Field::new_list_field(DataType::Int32, true))),false),
-        Field::new("position_ids", DataType::List(Arc::new(Field::new_list_field(DataType::Int32, true))),false),
+        Field::new(
+            "input_ids",
+            DataType::List(Arc::new(Field::new_list_field(DataType::Int32, true))),
+            false,
+        ),
+        Field::new(
+            "labels",
+            DataType::List(Arc::new(Field::new_list_field(DataType::Int32, true))),
+            false,
+        ),
+        Field::new(
+            "position_ids",
+            DataType::List(Arc::new(Field::new_list_field(DataType::Int32, true))),
+            false,
+        ),
     ]);
     // let path = Path::new(&arrow_path);
     let mut buffer = File::create(arrow_path).expect("create file error");
@@ -93,23 +103,46 @@ pub fn bin_and_save(mut inputs: BinaryHeap<TokenizedInput>, max_length: i32, arr
     pb.finish();
 
     write_bin_to_writer(record_vec, &mut writer, &schema);
-    
 }
 fn write_bin_to_writer<W>(bin: Vec<TokenizedInput>, writer: &mut StreamWriter<W>, schema: &Schema)
 where
     W: std::io::Write,
 {
-    let inputs: Vec<Option<Vec<Option<i32>>>> = bin.par_iter().map(|bin| {
-        Some(bin.input_ids.par_iter().map(|&x| Some(x)).collect::<Vec<Option<i32>>>())
-    }).collect();
+    let inputs: Vec<Option<Vec<Option<i32>>>> = bin
+        .par_iter()
+        .map(|bin| {
+            Some(
+                bin.input_ids
+                    .par_iter()
+                    .map(|&x| Some(x))
+                    .collect::<Vec<Option<i32>>>(),
+            )
+        })
+        .collect();
 
-    let labels: Vec<Option<Vec<Option<i32>>>> = bin.par_iter().map(|bin| {
-        Some(bin.labels.par_iter().map(|&x| Some(x)).collect::<Vec<Option<i32>>>())
-    }).collect();
+    let labels: Vec<Option<Vec<Option<i32>>>> = bin
+        .par_iter()
+        .map(|bin| {
+            Some(
+                bin.labels
+                    .par_iter()
+                    .map(|&x| Some(x))
+                    .collect::<Vec<Option<i32>>>(),
+            )
+        })
+        .collect();
 
-    let positions: Vec<Option<Vec<Option<i32>>>> = bin.par_iter().map(|bin| {
-        Some(bin.position_ids.par_iter().map(|&x| Some(x)).collect::<Vec<Option<i32>>>())
-    }).collect();
+    let positions: Vec<Option<Vec<Option<i32>>>> = bin
+        .par_iter()
+        .map(|bin| {
+            Some(
+                bin.position_ids
+                    .par_iter()
+                    .map(|&x| Some(x))
+                    .collect::<Vec<Option<i32>>>(),
+            )
+        })
+        .collect();
     let inputs_listarray = ListArray::from_iter_primitive::<Int32Type, _, _>(inputs);
     let labels_listarray = ListArray::from_iter_primitive::<Int32Type, _, _>(labels);
     let positions_listarray = ListArray::from_iter_primitive::<Int32Type, _, _>(positions);
@@ -132,7 +165,7 @@ where
     //      Arc::new(positions),
     //      None,
     // ).expect("Error creating list array");
-    
+
     let batch = RecordBatch::try_new(
         Arc::new(schema.clone()),
         vec![
