@@ -28,6 +28,39 @@ sudo apt install libssl-dev pkg-config build-essential
 ```bash
 cargo install --git <this-repo> --branch main
 ```
+
+## Info
+
+```python
+# the below is a simplified version of the code in python
+input = "data.jsonl"
+data = read_jsonl(input)
+heap = maxheap()
+for line in data:
+    conversation = tokenizer.apply_chat_template(line["conversation"])
+    inputs_ids = conversation.input_ids
+    labels = conversation.input_ids
+    labels[0] = -100
+    position_ids = list(range(len(inputs_ids)))
+    # rust allows ordering via the length key
+    heap.push({"input_ids": inputs_ids, "labels": labels, "position_ids": position_ids, "length": len(inputs_ids)})
+
+curr_bin = {}
+curr_len = 0
+while not heap.is_empty():
+    batch = heap.pop()
+    if curr_len == 0:
+        # only first iteration
+        curr_bin = batch
+        curr_len = batch["length"]
+    elif curr_len + batch["length"] < max_len:
+        curr_bin.merge(batch) # merge is a function to extend the lists
+        curr_len += batch["length"]
+    else:
+        write_bin(curr_bin) # write bin writes to the output file , jsonl/arrow
+        curr_bin = batch
+        curr_len = batch["length"]
+```
 ## Usage
 
 Preprocessing step:
@@ -78,8 +111,9 @@ dataset = Dataset.from_file("output/file.arrow")
 ```
 
 ## Issues and caveats
-- Only tokenizers with chat_template, bos_token, eos_token are supported
-- The format of the jsonl must contain a field called conversation, which is a list of dict with keys content and role
+- Only tokenizers with chat_template, bos_token, eos_token are supported  
+- The format of the jsonl must contain a field called conversation, which is a list of dict with keys content and role  
+- The process reads the entire jsonl file into memory, to speed up the process. This results in a high memory overhead.
 
 ## Roadmap
 [x] Integrate with python directly with Maturin - Completed but not very performant  

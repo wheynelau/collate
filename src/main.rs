@@ -52,15 +52,14 @@ fn main() -> std::io::Result<()> {
     };
     globals::TOTAL_JSONL.fetch_add(paths.len().try_into().unwrap(), std::sync::atomic::Ordering::SeqCst);
     paths.into_iter() // filter only jsonl files
-        .map(|path| {
-            conversations::single_jsonl_process(
+        .for_each(|path| {
+            let _ = conversations::single_jsonl_process(
                 &path,
                 &out_folder,
                 template.clone(),
                 args.format.clone(),
-            )
-        })
-        .collect::<Result<Vec<_>, std::io::Error>>()?;
+            );
+        });
 
     Ok(())
 }
