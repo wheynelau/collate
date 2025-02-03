@@ -68,9 +68,9 @@ Preprocessing step:
 ```bash
 cargo run --release -- --help
 
-This program reads a folder with jsonl files and packs them into a msgpack for python.
+This program reads a folder with jsonl files and packs them into the chosen format
 
-Usage: collate [OPTIONS] --input <INPUT> --output <OUTPUT> --tokenizer <TOKENIZER> --format <FORMAT>
+Usage: collate [OPTIONS] --input <INPUT> --output <OUTPUT> --tokenizer <TOKENIZER>
 
 Options:
   -i, --input <INPUT>
@@ -83,9 +83,14 @@ Options:
   -t, --tokenizer <TOKENIZER>
           Accepts huggingface <org>/<name> format for the tokenizer
 
+  -m, --max-length <MAX_LENGTH>
+          Max length of the tokenized input
+          
+          [default: 8192]
+
   -f, --format <FORMAT>
           Format of output file, [jsonl,arrow,msgpack]
-
+          
           [default: arrow]
 
   -h, --help
@@ -93,10 +98,8 @@ Options:
 
   -V, --version
           Print version
-```
 
-```bash
-cargo run --release -- -i data/ -o output/ -t mlx-community/Llama-3.2-1B-Instruct-4bit -f arrow
+cargo run --release -- -i data/ -o output/ -t mlx-community/Llama-3.2-1B-Instruct-4bit -f arrow 
 ```
 
 ### Loading from python
@@ -118,6 +121,6 @@ dataset = Dataset.from_file("output/file.arrow")
 ## Roadmap
 [x] Integrate with python directly with Maturin - Completed but not very performant  
 [ ] Add more tests  
-[ ] Python reference code - For understanding  
+[x] Python reference code - For understanding  
 [ ] Reduce memory overhead  
 [ ] Implement mmap  
