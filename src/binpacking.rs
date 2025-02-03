@@ -1,12 +1,15 @@
 // Handles bin packing of TokenizedInput
 
-use crate::conversations::TokenizedInput;
+use crate::{conversations::TokenizedInput, time_it};
 use arrow::array::types::Int32Type;
-use arrow::array::ListArray;
+use arrow::array::LargeListArray;
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::ipc::writer::StreamWriter;
 use arrow::record_batch::RecordBatch;
-use rayon::prelude::*;
+use arrow::array::{
+    ArrowPrimitiveType
+};
+use arrow::array::builder::{GenericListBuilder, PrimitiveBuilder};
 use std::collections::BinaryHeap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -45,7 +48,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 //     writer.finish().expect("Error finishing writing to file");
 //     Ok(())
 // }
-pub fn bin_and_save(mut inputs: BinaryHeap<TokenizedInput>, max_length: i32, arrow_path: String) {
+pub fn bin_and_save(mut inputs: BinaryHeap<TokenizedInput>, max_length: i32, arrow_path: String, handles: &mut Vec<std::thread::JoinHandle<()>>) {
     println!("Starting binning and saving to arrow");
     let style = ProgressStyle::with_template("Writing: [{elapsed_precise} / {eta_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {per_sec}")
     .expect("Invalid progress style");
@@ -56,34 +59,29 @@ pub fn bin_and_save(mut inputs: BinaryHeap<TokenizedInput>, max_length: i32, arr
     let schema = Schema::new(vec![
         Field::new(
             "input_ids",
-            DataType::List(Arc::new(Field::new_list_field(DataType::Int32, true))),
+            DataType::LargeList(Arc::new(Field::new_list_field(DataType::Int32, true))),
             false,
         ),
         Field::new(
             "labels",
-            DataType::List(Arc::new(Field::new_list_field(DataType::Int32, true))),
+            DataType::LargeList(Arc::new(Field::new_list_field(DataType::Int32, true))),
             false,
         ),
         Field::new(
             "position_ids",
-            DataType::List(Arc::new(Field::new_list_field(DataType::Int32, true))),
+            DataType::LargeList(Arc::new(Field::new_list_field(DataType::Int32, true))),
             false,
         ),
     ]);
-    // let path = Path::new(&arrow_path);
-    let mut buffer = File::create(arrow_path).expect("create file error");
-    let mut writer =
-        StreamWriter::try_new_buffered(&mut buffer, &schema).expect("Error creating writer");
-    // let mut writer = FileWriter::try_new_buffered(&mut buffer, &schema).expect("Error creating writer");
-    // Can't parallelize this because we need to preserve order
-    // Also due to heap
-    // let (tx, rx): (Sender<TokenizedInput>, Receiver<TokenizedInput>) = unbounded();
-    // std::thread::spawn(move || {
-    //     writer(rx, arrow_path, schema.clone()).expect("Error writing to file");
-    // });
     let mut record_vec = Vec::new();
-    while let Some(input) = inputs.pop() {
+    while let Some(mut input) = inputs.pop() {
         pb.inc(1);
+        if input.length >= max_length {
+            // add directly to record_vec
+            input.truncate(max_length);
+            record_vec.push(input);
+            continue;
+        }
         // always starts here
         if curr_length == 0 {
             curr_length = input.length;
@@ -98,73 +96,59 @@ pub fn bin_and_save(mut inputs: BinaryHeap<TokenizedInput>, max_length: i32, arr
             curr_bin = input;
         }
     }
-    // tx.send(curr_bin).expect("Error sending to channel");
-    // drop(tx);
-    pb.finish();
 
-    write_bin_to_writer(record_vec, &mut writer, &schema);
+    pb.finish();
+    let handle = std::thread::spawn(move || {
+        let mut buffer = File::create(arrow_path).expect("create file error");
+        let mut writer =
+            StreamWriter::try_new_buffered(&mut buffer, &schema).expect("Error creating writer");
+        time_it!("Writing to arrow took", write_bin_to_writer(record_vec, &mut writer, &schema));
+    });
+    handles.push(handle);
 }
+fn from_iter_primitive_no_option<T, I>(iter: I) -> LargeListArray
+    where
+        T: ArrowPrimitiveType,
+        I: IntoIterator<Item = Vec<<T as ArrowPrimitiveType>::Native>>,
+    {
+        let iter = iter.into_iter();
+        let size_hint = iter.size_hint().0;
+        let mut builder =
+            GenericListBuilder::<i64,_>::with_capacity(PrimitiveBuilder::<T>::new(), size_hint);
+
+        for inner_vec in iter {
+            for value in inner_vec {
+                builder.values().append_value(value); // Append non-optional values
+            }
+            builder.append(true); // Always append true since there are no missing values
+        }
+        builder.finish()
+}
+
+// TODO: Can we implement a streaming writer? 
+// fn writer(
+//     rx: Receiver<TokenizedInput>,
+//     arrow_path: String,
+//     schema: Schema,
+// ) -> Result<(), Box<dyn std::error::Error>> {
+//     let path = Path::new(&arrow_path);
+//     let mut buffer = File::create(path).expect("create file error");
+//     let mut writer =
+//         StreamWriter::try_new_buffered(&mut buffer, &schema).expect("Error creating writer");
+//     while let Ok(input) = rx.recv() {
+//         write_bin_to_writer(input, &mut writer, &schema);
+//     }
+//     writer.finish().expect("Error finishing writing to file");
+//     Ok(())
+// }
 fn write_bin_to_writer<W>(bin: Vec<TokenizedInput>, writer: &mut StreamWriter<W>, schema: &Schema)
 where
     W: std::io::Write,
 {
-    let inputs: Vec<Option<Vec<Option<i32>>>> = bin
-        .par_iter()
-        .map(|bin| {
-            Some(
-                bin.input_ids
-                    .par_iter()
-                    .map(|&x| Some(x))
-                    .collect::<Vec<Option<i32>>>(),
-            )
-        })
-        .collect();
 
-    let labels: Vec<Option<Vec<Option<i32>>>> = bin
-        .par_iter()
-        .map(|bin| {
-            Some(
-                bin.labels
-                    .par_iter()
-                    .map(|&x| Some(x))
-                    .collect::<Vec<Option<i32>>>(),
-            )
-        })
-        .collect();
-
-    let positions: Vec<Option<Vec<Option<i32>>>> = bin
-        .par_iter()
-        .map(|bin| {
-            Some(
-                bin.position_ids
-                    .par_iter()
-                    .map(|&x| Some(x))
-                    .collect::<Vec<Option<i32>>>(),
-            )
-        })
-        .collect();
-    let inputs_listarray = ListArray::from_iter_primitive::<Int32Type, _, _>(inputs);
-    let labels_listarray = ListArray::from_iter_primitive::<Int32Type, _, _>(labels);
-    let positions_listarray = ListArray::from_iter_primitive::<Int32Type, _, _>(positions);
-
-    // let inputs_listarray = ListArray::try_new(
-    //     Arc::new(Field::new("input_ids", DataType::List(Arc::new(Field::new_list_field(DataType::Int32, false))), false)),
-    //     OffsetBuffer::from_lengths(&offsets),
-    //     Arc::new(inputs),
-    //     None,
-    // ).expect("Error creating list array");
-    // let labels_listarray = ListArray::try_new(
-    //     Arc::new(Field::new("labels", DataType::List(Arc::new(Field::new_list_field(DataType::Int32, false))),false)),
-    //      OffsetBuffer::from_lengths(&offsets),
-    //      Arc::new(labels),
-    //      None,
-    // ).expect("Error creating list array");
-    // let positions_listarray = ListArray::try_new(
-    //      Arc::new(Field::new("position_ids", DataType::List(Arc::new(Field::new_list_field(DataType::Int32, false))),false)),
-    //      OffsetBuffer::from_lengths(&offsets),
-    //      Arc::new(positions),
-    //      None,
-    // ).expect("Error creating list array");
+    let inputs_listarray = from_iter_primitive_no_option::<Int32Type, _>(bin.iter().map(|bin| bin.input_ids.clone()));
+    let labels_listarray = from_iter_primitive_no_option::<Int32Type, _>(bin.iter().map(|bin| bin.labels.clone()));
+    let positions_listarray = from_iter_primitive_no_option::<Int32Type, _>(bin.iter().map(|bin| bin.position_ids.clone()));
 
     let batch = RecordBatch::try_new(
         Arc::new(schema.clone()),
@@ -175,27 +159,10 @@ where
         ],
     )
     .expect("Error creating record batch");
+
     writer.write(&batch).expect("Error writing to file");
     writer.finish().expect("Error finishing writing to file");
 }
-// fn write_bin_to_writer<W>(bin: TokenizedInput, writer: &mut StreamWriter<W>, schema: &Schema)
-// where
-//     W: std::io::Write,
-// {
-//     let input_ids:ListArray = Int32Array::from(bin.input_ids.clone()).into();
-//     let labels:ListArray = Int32Array::from(bin.labels.clone()).into();
-//     let position_ids:ListArray = Int32Array::from(bin.position_ids.clone().into());
-//     let batch = RecordBatch::try_new(
-//         Arc::new(schema.clone()),
-//         vec![
-//             Arc::new(input_ids),
-//             Arc::new(labels),
-//             Arc::new(position_ids),
-//         ],
-//     )
-//     .expect("Error creating record batch");
-//     writer.write(&batch).expect("Error writing to file");
-// }
 
 pub fn bin_save_to_jsonl(
     mut inputs: BinaryHeap<TokenizedInput>,

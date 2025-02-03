@@ -59,6 +59,12 @@ impl TokenizedInput {
         self.position_ids.extend(other.position_ids.clone());
         self.length += other.length;
     }
+    pub fn truncate(&mut self, max_length: i32) {
+        self.input_ids.truncate(max_length as usize);
+        self.labels.truncate(max_length as usize);
+        self.position_ids.truncate(max_length as usize);
+        self.length = self.input_ids.len() as i32;
+    }
 }
 // This function is used in the read_jsonl function
 // It is used to parse the jsonl file and tokenize the conversation
@@ -130,20 +136,20 @@ fn get_arrow_path(jsonl_path: &str, out_folder: String) -> String {
 
 pub fn single_jsonl_process(
     jsonl_path: &str,
+    max_length: i32,
     out_folder: &str,
     template: template::ChatTemplate,
     format: String,
+    handles: &mut Vec<std::thread::JoinHandle<()>>,
 ) -> std::io::Result<()> {
     // read jsonl for testing
     let inputs: BinaryHeap<TokenizedInput> = read_jsonl(jsonl_path, template);
     // parallelize the tokenization
     // let inputs = tokenize_data(data);
-    // bin packing
-    let max_length = 8192;
     match format.to_ascii_lowercase().as_str() {
         "arrow" => {
             let arrow_path = get_arrow_path(jsonl_path, out_folder.to_string());
-            binpacking::bin_and_save(inputs, max_length, arrow_path);
+            binpacking::bin_and_save(inputs, max_length, arrow_path, handles);
         }
         "jsonl" => {
             let jsonl_path = get_jsonl_path(jsonl_path, out_folder.to_string());

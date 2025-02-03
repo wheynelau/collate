@@ -23,6 +23,13 @@ pub struct Cli {
     #[clap(
         short,
         long,
+        help = "Max length of the tokenized input",
+        default_value = "8192"
+    )]
+    pub max_length: i32,
+    #[clap(
+        short,
+        long,
         help = "Format of output file, [jsonl,arrow,msgpack]",
         default_value = "arrow"
     )]

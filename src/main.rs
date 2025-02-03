@@ -21,11 +21,10 @@ fn main() -> std::io::Result<()> {
         fs::create_dir(&out_folder)?;
     }
     let tokenizer: String = args.tokenizer;
-    // let tokenizer: String = "aisingapore/llama3.1-8b-cpt-sea-lionv3-instruct".to_string();
 
     globals::init_tokenizer(&tokenizer);
     // read config
-
+    let mut handles = vec![];
     let config: config::TokenizerConfig = config::read_config(&tokenizer).unwrap();
     let template = template::ChatTemplate::new(
         config.chat_template,
@@ -59,11 +58,18 @@ fn main() -> std::io::Result<()> {
         .for_each(|path| {
             let _ = conversations::single_jsonl_process(
                 &path,
+                args.max_length,
                 &out_folder,
                 template.clone(),
                 args.format.clone(),
+                &mut handles,
             );
         });
+
+    // wait for all threads to finish
+    for handle in handles {
+        handle.join().unwrap();
+    }
 
     Ok(())
 }
