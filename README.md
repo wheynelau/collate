@@ -2,8 +2,6 @@
 
 Pet project on learning the data collation for huggingface [link](https://huggingface.co/blog/packing-with-FA2)
 
-[In progress] I have added a python reference here for the implementation. 
-
 ## Pre-requisites
 
 - Rust
