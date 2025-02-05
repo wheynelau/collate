@@ -10,14 +10,8 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
 This works for non root users as well.
-- Other packages (Linux tested)
+- Other packages may be needed (Linux tested)
 ```bash
-sudo apt install libssl-dev pkg-config build-essential
-```
-
-Single block:
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 sudo apt install libssl-dev pkg-config build-essential
 ```
 
