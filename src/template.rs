@@ -1,9 +1,9 @@
 // Much of this code was adapted from huggingface, for future reference
 // https://github.com/huggingface/text-generation-inference/blob/main/router/src/infer/chat_template.rs
 //
+use crate::config::TokenizerConfig;
 use minijinja::{Environment, Error, Template};
 use serde::{Deserialize, Serialize};
-use crate::config::TokenizerConfig;
 
 #[derive(Clone, Serialize, Deserialize, Default)]
 pub(crate) struct ChatTemplateInputs<'a> {
@@ -49,7 +49,11 @@ impl ChatTemplate {
         }
     }
     pub fn from_config(config: TokenizerConfig) -> Self {
-        Self::new(config.chat_template, Some(config.bos_token), Some(config.eos_token))
+        Self::new(
+            config.chat_template,
+            Some(config.bos_token),
+            Some(config.eos_token),
+        )
     }
     pub fn apply(&self, messages: Vec<TextMessage>) -> Result<String, Error> {
         self.template.render(ChatTemplateInputs {

@@ -46,11 +46,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 //     writer.finish().expect("Error finishing writing to file");
 //     Ok(())
 // }
-pub fn bin_and_save(
-    mut inputs: BinaryHeap<TokenizedInput>,
-    max_length: i32,
-    arrow_path: String,
-) {
+pub fn bin_and_save(mut inputs: BinaryHeap<TokenizedInput>, max_length: i32, arrow_path: String) {
     println!("Dispatching binning and saving to {}", &arrow_path);
     let mut curr_length = 0;
     let mut curr_bin = TokenizedInput::new();
@@ -97,10 +93,7 @@ pub fn bin_and_save(
     let mut writer =
         StreamWriter::try_new_buffered(&mut buffer, &schema).expect("Error creating writer");
     let msg = format!("Writing to {}", arrow_path);
-    time_it!(
-        msg,
-        write_bin_to_writer(record_vec, &mut writer, &schema)
-    );
+    time_it!(msg, write_bin_to_writer(record_vec, &mut writer, &schema));
     // explicitly drop the writer to free memory
     drop(writer);
 }
