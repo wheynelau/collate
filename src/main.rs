@@ -26,11 +26,7 @@ fn main() -> std::io::Result<()> {
     // read config
     let mut handles = vec![];
     let config: config::TokenizerConfig = config::read_config(&tokenizer).unwrap();
-    let template = template::ChatTemplate::new(
-        config.chat_template,
-        Some("<|begin_of_text|>".to_string()),
-        Some("<|eot_id|>".to_string()),
-    );
+    let template = template::ChatTemplate::from_config(config);
     let paths: Vec<String> = {
         let md = fs::metadata(&folder)?;
         if md.is_file() {

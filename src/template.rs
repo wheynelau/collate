@@ -3,6 +3,7 @@
 //
 use minijinja::{Environment, Error, Template};
 use serde::{Deserialize, Serialize};
+use crate::config::TokenizerConfig;
 
 #[derive(Clone, Serialize, Deserialize, Default)]
 pub(crate) struct ChatTemplateInputs<'a> {
@@ -46,6 +47,9 @@ impl ChatTemplate {
             bos_token: bos_token.map(|token| token.as_str().to_string()),
             eos_token: eos_token.map(|token| token.as_str().to_string()),
         }
+    }
+    pub fn from_config(config: TokenizerConfig) -> Self {
+        Self::new(config.chat_template, Some(config.bos_token), Some(config.eos_token))
     }
     pub fn apply(&self, messages: Vec<TextMessage>) -> Result<String, Error> {
         self.template.render(ChatTemplateInputs {
@@ -390,5 +394,17 @@ mod tests {
             result,
             "### User:\nHi!\n\n### Assistant:\nHello how can I help?### User:\nWhat is Deep Learning?\n\n### Assistant:\nmagic!"
         );
+    }
+    #[test]
+    fn test_with_config() {
+        let config = TokenizerConfig {
+            bos_token: "[BOS]".to_string(),
+            eos_token: "[EOS]".to_string(),
+            chat_template: "Test template".to_string(),
+        };
+        let ct = ChatTemplate::from_config(config);
+        assert_eq!(ct.bos_token, Some("[BOS]".to_string()));
+        assert_eq!(ct.eos_token, Some("[EOS]".to_string()));
+        assert_eq!(ct.template.source(), "Test template");
     }
 }
