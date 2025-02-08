@@ -145,19 +145,17 @@ pub fn single_jsonl_process(
     let inputs: BinaryHeap<TokenizedInput> = tokenize_jsonl(&jsonl_path, template);
 
     // Dispatch the job to a thread because its not parallelisable and IO bound
-    let handle = std::thread::spawn(move || {
-        match format.to_ascii_lowercase().as_str() {
-            "arrow" => {
-                let arrow_path = get_arrow_path(jsonl_path, out_folder.to_string());
-                binpacking::bin_and_save(inputs, max_length, arrow_path);
-            }
-            "jsonl" => {
-                let jsonl_path = get_jsonl_path(jsonl_path, out_folder.to_string());
-                binpacking::bin_save_to_jsonl(inputs, max_length, jsonl_path);
-            }
-            _ => {
-                let _ = Err::<(), anyhow::Error>(anyhow::anyhow!("Format not supported"));
-            }
+    let handle = std::thread::spawn(move || match format.to_ascii_lowercase().as_str() {
+        "arrow" => {
+            let arrow_path = get_arrow_path(jsonl_path, out_folder.to_string());
+            binpacking::bin_and_save(inputs, max_length, arrow_path);
+        }
+        "jsonl" => {
+            let jsonl_path = get_jsonl_path(jsonl_path, out_folder.to_string());
+            binpacking::bin_save_to_jsonl(inputs, max_length, jsonl_path);
+        }
+        _ => {
+            let _ = Err::<(), anyhow::Error>(anyhow::anyhow!("Format not supported"));
         }
     });
     handles.push(handle);
