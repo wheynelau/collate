@@ -101,6 +101,8 @@ pub fn bin_and_save(
         msg,
         write_bin_to_writer(record_vec, &mut writer, &schema)
     );
+    // explicitly drop the writer to free memory
+    drop(writer);
 }
 fn from_iter_primitive_no_option<T, I>(iter: I) -> LargeListArray
 where
@@ -161,6 +163,8 @@ where
 
     writer.write(&batch).expect("Error writing to file");
     writer.finish().expect("Error finishing writing to file");
+    // explicitly drop the batch to free memory
+    drop(batch);
 }
 
 pub fn bin_save_to_jsonl(
