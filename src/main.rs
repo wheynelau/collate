@@ -1,6 +1,8 @@
 use std::fs;
 
 use clap::Parser;
+use indicatif::MultiProgress;
+use rayon::prelude::*;
 use std::path::Path;
 
 pub mod args;
@@ -21,12 +23,12 @@ fn main() -> std::io::Result<()> {
         fs::create_dir(&out_folder)?;
     }
     let tokenizer: String = args.tokenizer;
-
+    let m = MultiProgress::new();
     globals::init_tokenizer(&tokenizer);
     // read config
-    let mut handles = vec![];
     let config: config::TokenizerConfig = config::read_config(&tokenizer).unwrap();
     let template = template::ChatTemplate::from_config(config);
+    let start = std::time::Instant::now();
     let paths: Vec<String> = {
         let md = fs::metadata(&folder)?;
         if md.is_file() {
@@ -50,7 +52,7 @@ fn main() -> std::io::Result<()> {
         std::sync::atomic::Ordering::SeqCst,
     );
     paths
-        .into_iter() // filter only jsonl files
+        .into_par_iter() // filter only jsonl files
         .for_each(|path| {
             let _ = conversations::single_jsonl_process(
                 path,
@@ -58,15 +60,11 @@ fn main() -> std::io::Result<()> {
                 out_folder.clone(),
                 template.clone(),
                 args.format.clone(),
-                &mut handles,
+                m.clone(),
             );
         });
-
-    // wait for all threads to finish
-    for handle in handles {
-        handle.join().unwrap();
-    }
-
+    let duration = start.elapsed();
+    println!("Total time elapsed: {:.2?}", duration);
     Ok(())
 }
 

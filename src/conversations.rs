@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use std::sync::{Arc, Mutex};
+use std::io::{BufRead, BufReader};
 use std::{fs, path::Path};
 
-use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 
-use crate::{binpacking, globals, template, time_it};
+use crate::{binpacking, globals, template};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Conversation {
@@ -42,6 +42,12 @@ impl PartialEq for TokenizedInput {
 }
 
 impl Eq for TokenizedInput {}
+
+impl Default for TokenizedInput {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl TokenizedInput {
     pub fn new() -> Self {
@@ -86,27 +92,66 @@ fn parse_and_tokenize(item: &str, ct: template::ChatTemplate) -> TokenizedInput 
     }
 }
 
-fn tokenize_jsonl(jsonl_path: &str, ct: template::ChatTemplate) -> BinaryHeap<TokenizedInput> {
-    // Is this faster than using BufReader?
-    println!("Reading jsonl file: {}", jsonl_path);
-    let jsonl = time_it!("Time to read: ", fs::read_to_string(jsonl_path).unwrap());
-    let length = jsonl.lines().count();
-    println!("Number of lines: {}", length);
-    let style = ProgressStyle::with_template("Tokenizing: [{elapsed_precise} / {eta_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {per_sec}")
-        .expect("Invalid progress style");
-    let pb = ProgressBar::new(length as u64);
-    pb.set_style(style);
-    let heap = Arc::new(Mutex::new(BinaryHeap::with_capacity(length)));
+fn tokenize_jsonl(
+    jsonl_path: &str,
+    ct: template::ChatTemplate,
+    pb: ProgressBar,
+) -> BinaryHeap<TokenizedInput> {
+    // Start of reading
+    let reader_style = ProgressStyle::with_template(
+        "Reading {msg} \
+        [{elapsed_precise} / {eta_precise}] \
+        {bar:40.cyan/blue} \
+        {decimal_bytes:>7}/{decimal_total_bytes:7} \
+        {decimal_bytes_per_sec}",
+    )
+    .expect("Invalid progress style");
+    let file = fs::File::open(jsonl_path).expect("File not found");
+    let file_size = file.metadata().expect("Error reading metadata").len();
+    pb.set_length(file_size);
+    pb.set_style(reader_style);
+    pb.set_message(jsonl_path.to_owned());
+    let reader = BufReader::new(file);
+    let jsonl: Vec<String> = pb.wrap_read(reader).lines().map(|l| l.unwrap()).collect();
+    pb.reset();
 
-    // Main loop, parse, tokenize and push to heap
-    jsonl.par_lines().progress_with(pb).for_each(|item| {
-        let input: TokenizedInput = parse_and_tokenize(item, ct.clone());
-        let mut heap = heap.lock().unwrap();
-        heap.push(input);
-    });
-    // return the heap
-    let heap = heap.lock().unwrap();
-    heap.clone()
+    // Start of tokenization
+    let length = jsonl.len();
+    let style = ProgressStyle::with_template(
+        "Tokenizing {msg} \
+         [{elapsed_precise} / {eta_precise}] \
+         {bar:40.cyan/blue} \
+         {pos:>7}/{len:7} \
+         {per_sec}",
+    )
+    .expect("Invalid progress style");
+    pb.set_length(length as u64);
+    pb.set_style(style);
+    pb.set_message(jsonl_path.to_owned());
+
+    // Main loop, parse, tokenize and create a local heap
+    let results: Vec<_> = jsonl
+        .par_chunks(50_000)
+        .map(|slice| {
+            // Create a local heap for this chunk
+            let mut local_heap = BinaryHeap::with_capacity(slice.len());
+
+            slice.iter().for_each(|item| {
+                pb.inc(1);
+                let input: TokenizedInput = parse_and_tokenize(item, ct.clone());
+                local_heap.push(input);
+            });
+
+            local_heap
+        })
+        .collect();
+    // merge all the local heaps into one heap
+    results
+        .into_iter()
+        .fold(BinaryHeap::with_capacity(length), |mut acc, mut x| {
+            acc.append(&mut x);
+            acc
+        })
 }
 
 fn get_jsonl_path(jsonl_path: String, out_folder: String) -> String {
@@ -139,26 +184,26 @@ pub fn single_jsonl_process(
     out_folder: String,
     template: template::ChatTemplate,
     format: String,
-    handles: &mut Vec<std::thread::JoinHandle<()>>,
+    pb: MultiProgress,
 ) -> std::io::Result<()> {
     // read and tokenize in parallel
-    let inputs: BinaryHeap<TokenizedInput> = tokenize_jsonl(&jsonl_path, template);
+    let pb = pb.add(ProgressBar::new(0));
+    let inputs: BinaryHeap<TokenizedInput> = tokenize_jsonl(&jsonl_path, template, pb.clone());
 
     // Dispatch the job to a thread because its not parallelisable and IO bound
-    let handle = std::thread::spawn(move || match format.to_ascii_lowercase().as_str() {
+    match format.to_ascii_lowercase().as_str() {
         "arrow" => {
             let arrow_path = get_arrow_path(jsonl_path, out_folder.to_string());
-            binpacking::bin_and_save(inputs, max_length, arrow_path);
+            binpacking::bin_and_save(inputs, max_length, arrow_path, pb);
         }
         "jsonl" => {
             let jsonl_path = get_jsonl_path(jsonl_path, out_folder.to_string());
-            binpacking::bin_save_to_jsonl(inputs, max_length, jsonl_path);
+            binpacking::bin_save_to_jsonl(inputs, max_length, jsonl_path, pb);
         }
         _ => {
             let _ = Err::<(), anyhow::Error>(anyhow::anyhow!("Format not supported"));
         }
-    });
-    handles.push(handle);
+    };
     Ok(())
 }
 

@@ -115,4 +115,3 @@ dataset = Dataset.from_file("output/file.arrow")
 [ ] Add more tests  
 [x] Python reference code - For understanding  
 [ ] Reduce memory overhead  
-[ ] Implement mmap  

@@ -214,7 +214,6 @@ mod tests {
             bos_token: Some("<|begin_of_text|>"),
             eos_token: Some("<|eot_id|>"),
             add_generation_prompt: false,
-            ..Default::default()
         };
 
         let result = tmpl.unwrap().render(chat_template_inputs).unwrap();
@@ -275,7 +274,6 @@ mod tests {
             bos_token: Some("[BOS]"),
             eos_token: Some("[EOS]"),
             add_generation_prompt: true,
-            ..Default::default()
         };
 
         let result = tmpl.unwrap().render(chat_template_inputs).unwrap();

@@ -1,10 +1,10 @@
 // Handles bin packing of TokenizedInput
 
-use crate::{conversations::TokenizedInput, time_it};
+use crate::conversations::TokenizedInput;
 use arrow::array::builder::{GenericListBuilder, PrimitiveBuilder};
 use arrow::array::types::Int32Type;
 use arrow::array::ArrowPrimitiveType;
-use arrow::array::LargeListArray;
+use arrow::array::ListArray;
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::ipc::writer::StreamWriter;
 use arrow::record_batch::RecordBatch;
@@ -13,62 +13,47 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use indicatif::{ProgressBar, ProgressStyle};
-/// python reference implementation
-/// while i < limit:
-// if curr_length == 0:
-// curr_length+= data[i]["length"]
-// bins.append(data[i])
-// i+=1
-// pbar.update(1)
-// elif curr_length + data[i]["length"] <= target:
-// bins[-1] = append_dict(bins[-1], data[i])
-// curr_length+= data[i]["length"]
-// i+=1
-// pbar.update(1)
-// else:
-// curr_length = 0
-// return Dataset.from_list(bins)
-/// Takes in a max heap of TokenizedInput and bins them into a max_length
-// fn writer(
-//     rx: Receiver<TokenizedInput>,
-//     arrow_path: String,
-//     schema: Schema,
-// ) -> Result<(), Box<dyn std::error::Error>> {
-//     let path = Path::new(&arrow_path);
-//     let mut buffer = File::create(path).expect("create file error");
-//     let mut writer =
-//         StreamWriter::try_new_buffered(&mut buffer, &schema).expect("Error creating writer");
-//     while let Ok(input) = rx.recv() {
-//         write_bin_to_writer(input, &mut writer, &schema);
-//     }
-//     writer.finish().expect("Error finishing writing to file");
-//     Ok(())
-// }
-pub fn bin_and_save(mut inputs: BinaryHeap<TokenizedInput>, max_length: i32, arrow_path: String) {
-    println!("Dispatching binning and saving to {}", &arrow_path);
+use rayon::prelude::*;
+
+pub fn bin_and_save(
+    mut inputs: BinaryHeap<TokenizedInput>,
+    max_length: i32,
+    arrow_path: String,
+    pb: ProgressBar,
+) {
+    pb.reset();
+    pb.set_length(inputs.len() as u64);
+    let style = ProgressStyle::with_template("Preparing writer for {msg} [{elapsed_precise} / {eta_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {per_sec}")
+        .expect("Invalid progress style");
+    pb.set_style(style);
+    pb.set_message(arrow_path.to_owned());
     let mut curr_length = 0;
     let mut curr_bin = TokenizedInput::new();
+
+    // TODO: Use List instead of LargeList
     let schema = Schema::new(vec![
         Field::new(
             "input_ids",
-            DataType::LargeList(Arc::new(Field::new_list_field(DataType::Int32, true))),
+            DataType::List(Arc::new(Field::new_list_field(DataType::Int32, true))),
             false,
         ),
         Field::new(
             "labels",
-            DataType::LargeList(Arc::new(Field::new_list_field(DataType::Int32, true))),
+            DataType::List(Arc::new(Field::new_list_field(DataType::Int32, true))),
             false,
         ),
         Field::new(
             "position_ids",
-            DataType::LargeList(Arc::new(Field::new_list_field(DataType::Int32, true))),
+            DataType::List(Arc::new(Field::new_list_field(DataType::Int32, true))),
             false,
         ),
     ]);
     let mut record_vec = Vec::new();
     while let Some(mut input) = inputs.pop() {
+        pb.inc(1);
         if input.length >= max_length {
             // add directly to record_vec
             input.truncate(max_length);
@@ -89,15 +74,38 @@ pub fn bin_and_save(mut inputs: BinaryHeap<TokenizedInput>, max_length: i32, arr
             curr_bin = input;
         }
     }
-    let mut buffer = File::create(&arrow_path).expect("create file error");
-    let mut writer =
-        StreamWriter::try_new_buffered(&mut buffer, &schema).expect("Error creating writer");
-    let msg = format!("Writing to {}", arrow_path);
-    time_it!(msg, write_bin_to_writer(record_vec, &mut writer, &schema));
+    record_vec.push(curr_bin);
+    pb.reset();
+    // start of writer
+    let writer_style = ProgressStyle::with_template("Writing to {msg}: {spinner}")
+        .expect("Invalid progress style");
+    pb.set_style(writer_style);
+    pb.enable_steady_tick(Duration::from_millis(100));
+    // chunk the files
+    // Reason for chunking, arrow offsets are limited to i32::MAX, unless using LargeList
+    // To be experimented if this is faster than using LargeList
+    let chunk_size = i32::MAX / max_length;
+    let num_chunks = record_vec.len() as i32 / chunk_size + 1;
+    record_vec
+        .par_chunks(chunk_size as usize)
+        .enumerate()
+        .for_each(|(idx, chunk)| {
+            // new name for arrow_path
+            let arrow_path = arrow_path.clone();
+            // easy way is replacing .arrow with {num}-of-{num_chunks}.arrow
+            let arrow_path = arrow_path.replace(
+                ".arrow",
+                &format!("-{:04}-of-{:04}.arrow", idx + 1, num_chunks),
+            );
+            let mut buffer = File::create(&arrow_path).expect("create file error");
+            let mut writer = StreamWriter::try_new_buffered(&mut buffer, &schema)
+                .expect("Error creating writer");
+            write_bin_to_writer(chunk, &mut writer, &schema);
+        });
     // explicitly drop the writer to free memory
-    drop(writer);
+    pb.finish_and_clear();
 }
-fn from_iter_primitive_no_option<T, I>(iter: I) -> LargeListArray
+fn from_iter_primitive_no_option<T, I>(iter: I) -> ListArray
 where
     T: ArrowPrimitiveType,
     I: IntoIterator<Item = Vec<<T as ArrowPrimitiveType>::Native>>,
@@ -105,7 +113,7 @@ where
     let iter = iter.into_iter();
     let size_hint = iter.size_hint().0;
     let mut builder =
-        GenericListBuilder::<i64, _>::with_capacity(PrimitiveBuilder::<T>::new(), size_hint);
+        GenericListBuilder::<i32, _>::with_capacity(PrimitiveBuilder::<T>::new(), size_hint);
 
     for inner_vec in iter {
         for value in inner_vec {
@@ -117,22 +125,7 @@ where
 }
 
 // TODO: Can we implement a streaming writer?
-// fn writer(
-//     rx: Receiver<TokenizedInput>,
-//     arrow_path: String,
-//     schema: Schema,
-// ) -> Result<(), Box<dyn std::error::Error>> {
-//     let path = Path::new(&arrow_path);
-//     let mut buffer = File::create(path).expect("create file error");
-//     let mut writer =
-//         StreamWriter::try_new_buffered(&mut buffer, &schema).expect("Error creating writer");
-//     while let Ok(input) = rx.recv() {
-//         write_bin_to_writer(input, &mut writer, &schema);
-//     }
-//     writer.finish().expect("Error finishing writing to file");
-//     Ok(())
-// }
-fn write_bin_to_writer<W>(bin: Vec<TokenizedInput>, writer: &mut StreamWriter<W>, schema: &Schema)
+fn write_bin_to_writer<W>(bin: &[TokenizedInput], writer: &mut StreamWriter<W>, schema: &Schema)
 where
     W: std::io::Write,
 {
@@ -164,6 +157,7 @@ pub fn bin_save_to_jsonl(
     mut inputs: BinaryHeap<TokenizedInput>,
     max_length: i32,
     jsonl_path: String,
+    _pb: ProgressBar,
 ) {
     let style = ProgressStyle::with_template("Writing: [{elapsed_precise} / {eta_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {per_sec}")
     .expect("Invalid progress style");
